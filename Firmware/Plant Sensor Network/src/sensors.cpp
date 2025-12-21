@@ -101,6 +101,13 @@ static void muxDisableAll(uint8_t muxAddr) {
 
 static void muxSelectChannel(uint8_t muxAddr, uint8_t channel) {
   if (channel > 7) return;
+
+  // IMPORTANT: Disable all channels on BOTH muxes before enabling one channel.
+  // Otherwise, two downstream busses can be connected at the same time and devices
+  // with the same I2C address (like MultiGas at 0x74) will collide and cause bad reads.
+  muxDisableAll(0x70);
+  muxDisableAll(0x71);
+
   Wire.beginTransmission(muxAddr);
   Wire.write(1 << channel);
   Wire.endTransmission();
