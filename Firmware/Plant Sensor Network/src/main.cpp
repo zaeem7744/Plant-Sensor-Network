@@ -11,8 +11,10 @@ static const int SDA_PIN = 8;
 static const int SCL_PIN = 9;
 
 // I2C multiplexers (e.g. TCA9548A) addresses
-static const uint8_t I2C_MUX1_ADDR = 0x70;   // mux 1 (MS8607, MLX90614, MultiGas)
-static const uint8_t I2C_MUX2_ADDR = 0x70;   // same physical mux, BH1750 on channel 3
+// IMPORTANT: if you have TWO separate mux boards in parallel on the same SDA/SCL,
+// they MUST have different I2C addresses (0x70-0x77). Example:
+static const uint8_t I2C_MUX1_ADDR = 0x70;   // mux 1
+static const uint8_t I2C_MUX2_ADDR = 0x71;   // mux 2 (change to match your A0/A1/A2 straps)
 
 // Logical mux indices just for display
 static const uint8_t MUX1_INDEX = 1;
