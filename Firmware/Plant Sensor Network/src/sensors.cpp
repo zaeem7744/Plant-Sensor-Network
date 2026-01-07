@@ -45,11 +45,14 @@ static BH1750 bh1750;
 // Allocate after auto-detection so we can set the correct address
 static DFRobot_Alcohol_I2C *alcohol = nullptr;
 
-// MultiGas probes (two separate boards)
+// MultiGas probes
 // - H2S probe on mux_a (0x70)
-// - O2 probe on mux_b (0x71)
+// - O2, NH3, CO, O3 probes on mux_b (0x71)
 static DFRobot_GAS_I2C *multigasH2S = nullptr;
 static DFRobot_GAS_I2C *multigasO2 = nullptr;
+static DFRobot_GAS_I2C *multigasNH3 = nullptr;
+static DFRobot_GAS_I2C *multigasCO  = nullptr;
+static DFRobot_GAS_I2C *multigasO3  = nullptr;
 
 // MH-Z9041A CH4 - allocate after detection
 static DFRobot_MHZ9041A_I2C *ch4 = nullptr;
@@ -445,6 +448,9 @@ void loop() {
   static bool alcoholInitialized = false;
   static bool multigasH2SInitialized = false;
   static bool multigasO2Initialized = false;
+  static bool multigasNH3Initialized = false;
+  static bool multigasCOInitialized  = false;
+  static bool multigasO3Initialized  = false;
   static bool ch4Initialized = false;
 
   // Track whether a sensor was ever connected before (to distinguish "not_found" vs "not_connected")
@@ -453,6 +459,9 @@ void loop() {
   static bool alcoholEverConnected = false;
   static bool multigasH2SEverConnected = false;
   static bool multigasO2EverConnected = false;
+  static bool multigasNH3EverConnected = false;
+  static bool multigasCOEverConnected  = false;
+  static bool multigasO3EverConnected  = false;
   static bool ch4EverConnected = false;
 
   static uint8_t msMuxAddr = 0;
@@ -471,10 +480,24 @@ void loop() {
   static uint8_t gasH2SChannel = 6;
   static uint8_t gasH2SAddr = 0;
 
-  // MultiGas O2 on mux_b (0x71), channel unknown -> will scan
-  static uint8_t gasO2MuxAddr = 0x71;
-  static uint8_t gasO2Channel = 0;
-  static uint8_t gasO2Addr = 0;
+  // MultiGas gases on mux_b (0x71)
+  // From your wiring / scan:
+  //   ch4 -> O2, ch5 -> NH3, ch6 -> CO, ch7 -> O3 (all at 0x74)
+  static uint8_t gasO2MuxAddr  = 0x71;
+  static uint8_t gasO2Channel  = 4;
+  static uint8_t gasO2Addr     = 0;
+
+  static uint8_t gasNH3MuxAddr = 0x71;
+  static uint8_t gasNH3Channel = 5;
+  static uint8_t gasNH3Addr    = 0;
+
+  static uint8_t gasCOMuxAddr  = 0x71;
+  static uint8_t gasCOChannel  = 6;
+  static uint8_t gasCOAddr     = 0;
+
+  static uint8_t gasO3MuxAddr  = 0x71;
+  static uint8_t gasO3Channel  = 7;
+  static uint8_t gasO3Addr     = 0;
 
   static uint8_t ch4MuxAddr = 0;
   static uint8_t ch4MuxChannel = 0;
@@ -598,14 +621,14 @@ void loop() {
     }
   }
 
-  // ---- Init MultiGas(O2) on mux_b (0x71) ----
+  // ---- Init MultiGas(O2) on mux_b (0x71), channel 4 ----
   if (!multigasO2Initialized) {
     uint8_t ch = 0;
     uint8_t addr = 0;
     String t = "";
 
-    if (!findMultiGasOnMuxForType(gasO2MuxAddr, 0xFF, "O2", &ch, &addr, &t)) {
-      printStatusLine("MULTIGAS(O2)", 0x71, 0, multigasO2EverConnected ? "not_connected" : "not_found");
+    if (!findMultiGasOnMuxForType(gasO2MuxAddr, gasO2Channel, "O2", &ch, &addr, &t)) {
+      printStatusLine("MULTIGAS(O2)", gasO2MuxAddr, gasO2Channel, multigasO2EverConnected ? "not_connected" : "not_found");
     } else {
       gasO2Channel = ch;
       gasO2Addr = addr;
@@ -626,6 +649,102 @@ void loop() {
         multigasO2->setTempCompensation(DFRobot_GAS::ON);
         multigasO2Initialized = true;
         multigasO2EverConnected = true;
+      }
+    }
+  }
+
+  // ---- Init MultiGas(NH3) on mux_b (0x71), channel 5 ----
+  if (!multigasNH3Initialized) {
+    uint8_t ch = 0;
+    uint8_t addr = 0;
+    String t = "";
+
+    if (!findMultiGasOnMuxForType(gasNH3MuxAddr, gasNH3Channel, "NH3", &ch, &addr, &t)) {
+      printStatusLine("MULTIGAS(NH3)", gasNH3MuxAddr, gasNH3Channel, multigasNH3EverConnected ? "not_connected" : "not_found");
+    } else {
+      gasNH3Channel = ch;
+      gasNH3Addr = addr;
+
+      muxSelectChannel(gasNH3MuxAddr, gasNH3Channel);
+      delay(5);
+
+      if (multigasNH3 == nullptr) {
+        multigasNH3 = new DFRobot_GAS_I2C(&Wire, gasNH3Addr);
+      } else {
+        multigasNH3->setI2cAddr(gasNH3Addr);
+      }
+
+      if (!multigasNH3->begin()) {
+        printStatusLine("MULTIGAS(NH3)", gasNH3MuxAddr, gasNH3Channel, "begin_failed");
+      } else {
+        multigasNH3->changeAcquireMode(DFRobot_GAS::PASSIVITY);
+        multigasNH3->setTempCompensation(DFRobot_GAS::ON);
+        multigasNH3Initialized = true;
+        multigasNH3EverConnected = true;
+      }
+    }
+  }
+
+  // ---- Init MultiGas(CO) on mux_b (0x71), channel 6 ----
+  if (!multigasCOInitialized) {
+    uint8_t ch = 0;
+    uint8_t addr = 0;
+    String t = "";
+
+    if (!findMultiGasOnMuxForType(gasCOMuxAddr, gasCOChannel, "CO", &ch, &addr, &t)) {
+      printStatusLine("MULTIGAS(CO)", gasCOMuxAddr, gasCOChannel, multigasCOEverConnected ? "not_connected" : "not_found");
+    } else {
+      gasCOChannel = ch;
+      gasCOAddr = addr;
+
+      muxSelectChannel(gasCOMuxAddr, gasCOChannel);
+      delay(5);
+
+      if (multigasCO == nullptr) {
+        multigasCO = new DFRobot_GAS_I2C(&Wire, gasCOAddr);
+      } else {
+        multigasCO->setI2cAddr(gasCOAddr);
+      }
+
+      if (!multigasCO->begin()) {
+        printStatusLine("MULTIGAS(CO)", gasCOMuxAddr, gasCOChannel, "begin_failed");
+      } else {
+        multigasCO->changeAcquireMode(DFRobot_GAS::PASSIVITY);
+        multigasCO->setTempCompensation(DFRobot_GAS::ON);
+        multigasCOInitialized = true;
+        multigasCOEverConnected = true;
+      }
+    }
+  }
+
+  // ---- Init MultiGas(O3) on mux_b (0x71), channel 7 ----
+  if (!multigasO3Initialized) {
+    uint8_t ch = 0;
+    uint8_t addr = 0;
+    String t = "";
+
+    if (!findMultiGasOnMuxForType(gasO3MuxAddr, gasO3Channel, "O3", &ch, &addr, &t)) {
+      printStatusLine("MULTIGAS(O3)", gasO3MuxAddr, gasO3Channel, multigasO3EverConnected ? "not_connected" : "not_found");
+    } else {
+      gasO3Channel = ch;
+      gasO3Addr = addr;
+
+      muxSelectChannel(gasO3MuxAddr, gasO3Channel);
+      delay(5);
+
+      if (multigasO3 == nullptr) {
+        multigasO3 = new DFRobot_GAS_I2C(&Wire, gasO3Addr);
+      } else {
+        multigasO3->setI2cAddr(gasO3Addr);
+      }
+
+      if (!multigasO3->begin()) {
+        printStatusLine("MULTIGAS(O3)", gasO3MuxAddr, gasO3Channel, "begin_failed");
+      } else {
+        multigasO3->changeAcquireMode(DFRobot_GAS::PASSIVITY);
+        multigasO3->setTempCompensation(DFRobot_GAS::ON);
+        multigasO3Initialized = true;
+        multigasO3EverConnected = true;
       }
     }
   }
@@ -712,6 +831,60 @@ void loop() {
       } else {
         const char *unit = (t == "O2") ? "%vol" : "ppm";
         printMultiGasLine(gasO2MuxAddr, gasO2Channel, t, conc, unit);
+      }
+    }
+  }
+
+  // ---- Read MultiGas(NH3) ----
+  if (multigasNH3Initialized && multigasNH3 != nullptr) {
+    if (!multigasPresent(gasNH3MuxAddr, gasNH3Channel, gasNH3Addr)) {
+      printStatusLine("MULTIGAS(NH3)", gasNH3MuxAddr, gasNH3Channel, "not_connected");
+      multigasNH3Initialized = false;
+    } else {
+      String t = multigasNH3->queryGasType();
+      float conc = multigasNH3->readGasConcentrationPPM();
+      if (t.length() == 0) {
+        printStatusLine("MULTIGAS(NH3)", gasNH3MuxAddr, gasNH3Channel, "comm_error");
+        multigasNH3Initialized = false;
+      } else {
+        const char *unit = "ppm";
+        printMultiGasLine(gasNH3MuxAddr, gasNH3Channel, t, conc, unit);
+      }
+    }
+  }
+
+  // ---- Read MultiGas(CO) ----
+  if (multigasCOInitialized && multigasCO != nullptr) {
+    if (!multigasPresent(gasCOMuxAddr, gasCOChannel, gasCOAddr)) {
+      printStatusLine("MULTIGAS(CO)", gasCOMuxAddr, gasCOChannel, "not_connected");
+      multigasCOInitialized = false;
+    } else {
+      String t = multigasCO->queryGasType();
+      float conc = multigasCO->readGasConcentrationPPM();
+      if (t.length() == 0) {
+        printStatusLine("MULTIGAS(CO)", gasCOMuxAddr, gasCOChannel, "comm_error");
+        multigasCOInitialized = false;
+      } else {
+        const char *unit = "ppm";
+        printMultiGasLine(gasCOMuxAddr, gasCOChannel, t, conc, unit);
+      }
+    }
+  }
+
+  // ---- Read MultiGas(O3) ----
+  if (multigasO3Initialized && multigasO3 != nullptr) {
+    if (!multigasPresent(gasO3MuxAddr, gasO3Channel, gasO3Addr)) {
+      printStatusLine("MULTIGAS(O3)", gasO3MuxAddr, gasO3Channel, "not_connected");
+      multigasO3Initialized = false;
+    } else {
+      String t = multigasO3->queryGasType();
+      float conc = multigasO3->readGasConcentrationPPM();
+      if (t.length() == 0) {
+        printStatusLine("MULTIGAS(O3)", gasO3MuxAddr, gasO3Channel, "comm_error");
+        multigasO3Initialized = false;
+      } else {
+        const char *unit = "ppm";
+        printMultiGasLine(gasO3MuxAddr, gasO3Channel, t, conc, unit);
       }
     }
   }
