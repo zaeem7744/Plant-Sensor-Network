@@ -6,6 +6,7 @@
 #include <DFRobot_Alcohol.h>
 #include <DFRobot_MultiGasSensor.h>
 #include <DFRobot_MHZ9041A.h>
+#include "DFRobotHCHOSensor.h"
 
 // ESP32-S3 custom I2C pins
 static const int SDA_PIN = 8;
@@ -56,6 +57,24 @@ static DFRobot_GAS_I2C *multigasO3  = nullptr;
 
 // MH-Z9041A CH4 - allocate after detection
 static DFRobot_MHZ9041A_I2C *ch4 = nullptr;
+
+// RS485 Soil EC + pH sensor (DFRobot SEN0603)
+static const int RS485_RX_PIN = 19;
+static const int RS485_TX_PIN = 20;
+static HardwareSerial RS485Serial(2);
+
+// Modbus-RTU query frame for this sensor (address 0x01, function 0x03,
+// start register 0x0000, length 0x0004, CRC = 0x4409 (low, high)).
+static uint8_t soilQueryFrame[8] = { 0x01, 0x03, 0x00, 0x00, 0x00, 0x04, 0x44, 0x09 };
+
+static float soilEcMsPerCm = 0.0f;
+static float soilPh = 0.0f;
+
+// DFRobot HCHO sensor (UART, single "S" pin)
+static const int HCHO_RX_PIN = 5;   // GPIO receiving data from sensor S
+static HardwareSerial HCHO_Serial(1);
+static DFRobotHCHOSensor hcho(&HCHO_Serial);
+static float hchoPpm = 0.0f;
 
 static bool i2cPing(uint8_t address) {
   Wire.beginTransmission(address);
@@ -428,6 +447,111 @@ static void printMultiGasLine(uint8_t muxAddr, uint8_t channel, const String &ga
                 unit);
 }
 
+static void printSoilStatusLine(const char *status) {
+  char chBuf[6];
+  chLabel(0, chBuf, sizeof(chBuf));
+  Serial.printf("%-18s %-6s %-4s %s\n",
+                "SOIL_EC_PH",
+                "uart2",
+                chBuf,
+                status);
+}
+
+static void printSoilECPHLine(float ec, float ph) {
+  char chBuf[6];
+  chLabel(0, chBuf, sizeof(chBuf));
+  Serial.printf("%-18s %-6s %-4s EC=%6.2fmS/cm  pH=%4.1f\n",
+                "SOIL_EC_PH",
+                "uart2",
+                chBuf,
+                ec,
+                ph);
+}
+
+static void printHchoStatusLine(const char *status) {
+  char chBuf[6];
+  chLabel(0, chBuf, sizeof(chBuf));
+  Serial.printf("%-18s %-6s %-4s %s\n",
+                "HCHO_UART",
+                "uart1",
+                chBuf,
+                status);
+}
+
+static void printHchoLine(float ppm) {
+  char chBuf[6];
+  chLabel(0, chBuf, sizeof(chBuf));
+  Serial.printf("%-18s %-6s %-4s HCHO=%6.3fppm\n",
+                "HCHO_UART",
+                "uart1",
+                chBuf,
+                ppm);
+}
+
+static unsigned int soilCRC16(unsigned char *buf, int len) {
+  unsigned int crc = 0xFFFF;
+  for (int pos = 0; pos < len; pos++) {
+    crc ^= (unsigned int)buf[pos];
+    for (int i = 8; i != 0; i--) {
+      if ((crc & 0x0001) != 0) {
+        crc >>= 1;
+        crc ^= 0xA001;
+      } else {
+        crc >>= 1;
+      }
+    }
+  }
+
+  // Swap bytes (high/low)
+  crc = ((crc & 0x00FF) << 8) | ((crc & 0xFF00) >> 8);
+  return crc;
+}
+
+static bool readSoilSensorOnce(float &ec, float &ph) {
+  uint8_t response[13] = {0};
+
+  // Flush any old data from the RX buffer
+  while (RS485Serial.available()) {
+    RS485Serial.read();
+  }
+
+  // Send query frame
+  RS485Serial.write(soilQueryFrame, sizeof(soilQueryFrame));
+  RS485Serial.flush();
+
+  // Give the sensor time to respond
+  delay(250);
+
+  size_t n = RS485Serial.readBytes(response, sizeof(response));
+  if (n != sizeof(response)) {
+    return false;
+  }
+
+  // Basic header checks: address=0x01, func=0x03, byte count=0x08
+  if (response[0] != 0x01 || response[1] != 0x03 || response[2] != 0x08) {
+    return false;
+  }
+
+  // Verify CRC on first 11 bytes
+  unsigned int crcCalc = soilCRC16(response, 11);
+  unsigned int crcFrame = (response[11] << 8) | response[12];
+  if (crcCalc != crcFrame) {
+    return false;
+  }
+
+  // Parse values:
+  //   reg0, reg1: unused (always 0)
+  //   reg2: EC (µS/cm)
+  //   reg3: pH * 10
+  uint16_t ecRaw = (uint16_t)response[7]  << 8 | response[8];
+  uint16_t phRaw = (uint16_t)response[9]  << 8 | response[10];
+
+  ec = ecRaw / 1000.0f;  // µS/cm -> mS/cm
+  ph = phRaw / 10.0f;
+
+  return true;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -436,6 +560,13 @@ void setup() {
   Serial.println(F("=== Sensors (start: MS8607 via I2C mux) ==="));
 
   Wire.begin(SDA_PIN, SCL_PIN);
+
+  // RS485 soil EC+pH sensor UART
+  RS485Serial.begin(9600, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+  RS485Serial.setTimeout(500);
+
+  // DFRobot HCHO UART sensor (single S pin)
+  HCHO_Serial.begin(9600, SERIAL_8N1, HCHO_RX_PIN, -1);
 
   printHeaderOnce();
 }
@@ -452,6 +583,8 @@ void loop() {
   static bool multigasCOInitialized  = false;
   static bool multigasO3Initialized  = false;
   static bool ch4Initialized = false;
+  static bool soilInitialized = false;
+  static bool hchoInitialized = false;
 
   // Track whether a sensor was ever connected before (to distinguish "not_found" vs "not_connected")
   static bool msEverConnected = false;
@@ -463,6 +596,8 @@ void loop() {
   static bool multigasCOEverConnected  = false;
   static bool multigasO3EverConnected  = false;
   static bool ch4EverConnected = false;
+  static bool soilEverConnected = false;
+  static bool hchoEverConnected = false;
 
   static uint8_t msMuxAddr = 0;
   static uint8_t msMuxChannel = 0;
@@ -586,6 +721,47 @@ void loop() {
         ch4Initialized = true;
         ch4EverConnected = true;
       }
+    }
+  }
+
+  // ---- Init RS485 Soil EC+pH sensor (DFRobot SEN0603) ----
+  if (!soilInitialized) {
+    float ecTest = 0.0f;
+    float phTest = 0.0f;
+    if (!readSoilSensorOnce(ecTest, phTest)) {
+      printSoilStatusLine(soilEverConnected ? "not_connected" : "not_found");
+    } else {
+      soilEcMsPerCm = ecTest;
+      soilPh = phTest;
+      printSoilStatusLine("ready");
+      soilInitialized = true;
+      soilEverConnected = true;
+    }
+  }
+
+  // ---- Init HCHO UART sensor ----
+  if (!hchoInitialized) {
+    bool haveFrame = false;
+    // The DFRobot library's available() is designed to be called often;
+    // here we call it in a small loop so we actually consume the pending
+    // UART bytes and allow its sliding window to find a valid frame.
+    for (int i = 0; i < 64; ++i) {
+      if (hcho.available()) {
+        haveFrame = true;
+        break;
+      }
+      if (HCHO_Serial.available() == 0) {
+        break;
+      }
+    }
+
+    if (!haveFrame) {
+      printHchoStatusLine(hchoEverConnected ? "not_connected" : "not_found");
+    } else {
+      hchoPpm = hcho.uartReadPPM();
+      printHchoStatusLine("ready");
+      hchoInitialized = true;
+      hchoEverConnected = true;
     }
   }
 
@@ -797,6 +973,41 @@ void loop() {
       float tC = ch4->getTemperature();
       int err = (int)ch4->getErrorMsg();
       printCh4Line(ch4MuxAddr, ch4MuxChannel, lel, tC, err);
+    }
+  }
+
+  // ---- Read RS485 Soil EC+pH sensor ----
+  if (soilInitialized) {
+    float ecNow = 0.0f;
+    float phNow = 0.0f;
+    if (!readSoilSensorOnce(ecNow, phNow)) {
+      printSoilStatusLine("comm_error");
+      soilInitialized = false;
+    } else {
+      soilEcMsPerCm = ecNow;
+      soilPh = phNow;
+      printSoilECPHLine(soilEcMsPerCm, soilPh);
+    }
+  }
+
+  // ---- Read HCHO UART sensor ----
+  if (hchoInitialized) {
+    bool haveFrame = false;
+    for (int i = 0; i < 64; ++i) {
+      if (hcho.available()) {
+        haveFrame = true;
+        break;
+      }
+      if (HCHO_Serial.available() == 0) {
+        break;
+      }
+    }
+
+    if (!haveFrame) {
+      printHchoStatusLine("no_data");
+    } else {
+      hchoPpm = hcho.uartReadPPM();
+      printHchoLine(hchoPpm);
     }
   }
 
