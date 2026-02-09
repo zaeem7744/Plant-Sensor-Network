@@ -18,6 +18,7 @@
 
 // Deep sleep support for ESP32-S3
 #include <esp_sleep.h>
+#include <driver/gpio.h>  // For gpio_hold_en/dis functions
 
 // ESP32-S3 custom I2C pins
 static const int SDA_PIN = 8;
@@ -31,11 +32,14 @@ static const int SENSOR_MOSFET_PIN = 14;
 // Wake-up button pin (press to wake from deep sleep and send data)
 static const int WAKE_BUTTON_PIN = 7;
 
+// Status LED pin (indicates device active/wifi status)
+static const int STATUS_LED_PIN = 21;
+
 // Sampling / power-control timing (can be tuned)
 // Time between the start of measurement cycles (sensor power ON events)
-static const uint32_t SENSOR_SAMPLE_INTERVAL_MS = 30000; // 30 seconds
+static const uint32_t SENSOR_SAMPLE_INTERVAL_MS = 1800000; // 30 minutes (1,800,000 ms)
 // Warm-up time after enabling 5V before reading sensors
-static const uint32_t SENSOR_POWER_WARMUP_MS   = 3000;  // 5 seconds
+static const uint32_t SENSOR_POWER_WARMUP_MS   = 3000;  // 3 seconds
 
 // Deep sleep configuration
 // Conversion: microseconds = milliseconds * 1000
@@ -138,8 +142,19 @@ static void connectWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print(F("WiFi connected, IP="));
     Serial.println(WiFi.localIP());
+    // WiFi connected - LED stays solid ON
+    digitalWrite(STATUS_LED_PIN, HIGH);
   } else {
     Serial.println(F("WiFi connect FAILED (continuing, but no backend POSTs)."));
+    // WiFi failed - blink LED to indicate error
+    for (int i = 0; i < 5; i++) {
+      digitalWrite(STATUS_LED_PIN, HIGH);
+      delay(200);
+      digitalWrite(STATUS_LED_PIN, LOW);
+      delay(200);
+    }
+    // Keep LED blinking slowly while awake without WiFi
+    digitalWrite(STATUS_LED_PIN, HIGH);
   }
 }
 
@@ -823,8 +838,14 @@ void setup() {
   // Check wake-up reason
   esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
   
+  // Configure status LED (GPIO 21) to indicate device active
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  digitalWrite(STATUS_LED_PIN, HIGH);  // Turn ON immediately when device wakes
+  
   // Configure wake-up button (GPIO 7) with internal pull-up
   // Button should connect GPIO 7 to GND when pressed
+  // Release GPIO hold from previous sleep cycle (if any)
+  gpio_hold_dis(GPIO_NUM_7);
   pinMode(WAKE_BUTTON_PIN, INPUT_PULLUP);
   delay(50);  // Allow pin to stabilize
   
@@ -894,6 +915,19 @@ void loop() {
       enterDeepSleep();
       return;  // Never reached, but explicit
     }
+    
+    // Blink LED slowly if WiFi not connected (to show device is awake but offline)
+    if (WiFi.status() != WL_CONNECTED) {
+      static uint32_t lastBlinkMs = 0;
+      if (millis() - lastBlinkMs >= 1000) {  // Toggle every 1 second
+        digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN));
+        lastBlinkMs = millis();
+      }
+    } else {
+      // WiFi connected - keep LED solid ON
+      digitalWrite(STATUS_LED_PIN, HIGH);
+    }
+    
     // Stay awake, delay and loop
     delay(100);
     return;
@@ -1940,15 +1974,19 @@ void loop() {
 
 // Helper function to configure and enter deep sleep
 void enterDeepSleep() {
+  // Turn OFF status LED before sleep
+  digitalWrite(STATUS_LED_PIN, LOW);
+  
   // Configure wake-up sources:
   // 1. Timer wake-up (every 30 seconds for scheduled measurements)
   esp_sleep_enable_timer_wakeup(DEEP_SLEEP_INTERVAL_US);
   
   // 2. External wake-up (button on GPIO 7, wake on LOW when button pressed to GND)
-  // DISABLED: Uncomment below if you have a button connected to GPIO 7
-  // esp_sleep_enable_ext0_wakeup(GPIO_NUM_7, 0);  // 0 = LOW level triggers wake
+  // Enable button wake-up with GPIO hold to maintain pull-up during sleep
+  gpio_hold_en(GPIO_NUM_7);  // Hold GPIO 7 state (pull-up) during deep sleep
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_7, 0);  // 0 = LOW level triggers wake
   
-  Serial.println(F("Deep sleep configured: wake on timer only"));
+  Serial.println(F("Deep sleep configured: wake on timer or button press"));
   Serial.flush();
   
   // Enter deep sleep (ESP32 will restart from setup() on wake)

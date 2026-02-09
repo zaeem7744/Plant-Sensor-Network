@@ -23,7 +23,7 @@
   - Backend: FastAPI + SQLite (`sensors.db`)
   - API endpoints: `/api/ingest`, `/api/sensors/current`, `/api/sensors/history`, `/api/overview`, `/api/health`
 - **Web Dashboard**
-  - React/Vite/Lovable app on client PC
+  - React/Vite app on client PC
   - Uses `VITE_BACKEND_URL=http://PC_LAN_IP:8000`
   - Views: Overview, Sensors list, Sensor detail/history charts
 
