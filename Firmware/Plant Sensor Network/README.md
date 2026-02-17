@@ -2,7 +2,7 @@
 
 ESP32-S3 firmware for comprehensive environmental monitoring with deep sleep power management.
 
-## 🌟 Features
+##  Features
 
 - **13 Environmental Sensors**: Temperature, humidity, pressure, light, soil moisture, pH, EC, and multiple gas sensors
 - **Deep Sleep Mode**: 30-minute sampling intervals with ~70% power savings
@@ -12,7 +12,7 @@ ESP32-S3 firmware for comprehensive environmental monitoring with deep sleep pow
 - **Status LED**: Visual feedback for device and WiFi status
 - **I²C Multiplexing**: Two TCA9548A muxes handle address conflicts
 
-## 📋 Hardware Requirements
+##  Hardware Requirements
 
 - **ESP32-S3** development board
 - **Sensors** (DFRobot and compatible modules):
@@ -36,7 +36,7 @@ ESP32-S3 firmware for comprehensive environmental monitoring with deep sleep pow
 - **Boost Converter**: Generates stable 5V for ESP32 and sensors
 - **Solar Panel**: 10W @ 18V for continuous charging (optional)
 
-## 🔌 Pin Configuration
+##  Pin Configuration
 
 | Function | GPIO | Notes |
 |----------|------|-------|
@@ -49,7 +49,7 @@ ESP32-S3 firmware for comprehensive environmental monitoring with deep sleep pow
 | Wake Button | 7 | Button to GND (internal pull-up) |
 | Status LED | 21 | Blue LED + 4.7kΩ resistor to GND |
 
-## 🚀 Quick Start
+##  Quick Start
 
 ### 1. Install PlatformIO
 
@@ -89,7 +89,7 @@ pio device monitor
 # Or use VS Code PlatformIO toolbar: Serial Monitor
 ```
 
-## ⚙️ Configuration Parameters
+##  Configuration Parameters
 
 Edit `src/sensors.cpp` to adjust timing:
 
@@ -110,7 +110,7 @@ static const uint32_t BUTTON_ACTIVE_TIME_MS = 30000;
 - 30 minutes: `1800000` (default)
 - 1 hour: `3600000`
 
-## 🔋 Power Management
+##  Power Management
 
 ### Power Optimization Journey
 
@@ -121,7 +121,7 @@ The system underwent extensive power optimization to achieve maximum battery lif
 - ESP32 always active (no sleep)
 - Peak current: **330-340 mA** (with methane + pH sensors)
 - Daily consumption: ~8 Ah/day
-- **Battery life: ~1 day** ❌
+- **Battery life: ~1 day** 
 
 **Step 1: Identify High-Power Components**
 - Methane sensor: Consumes ~140 mA
@@ -133,19 +133,19 @@ The system underwent extensive power optimization to achieve maximum battery lif
 - Added N-channel MOSFET on GPIO 14 to control sensor 5V rail
 - Sensors powered ON only during readings
 - Sensors OFF current: **6 mA** (vs 300 mA active)
-- Power savings: **~98%** during idle ✅
+- Power savings: **~98%** during idle 
 
 **Step 3: ESP32 Deep Sleep**
 - ESP32 always-on current: ~60 mA
 - Optimized deep sleep current: **~20 mA**
-- Power savings: **~67%** when sleeping ✅
+- Power savings: **~67%** when sleeping 
 
 **Final Optimized Configuration**:
 - Sensors: Powered ON for ~8 seconds per cycle, OFF otherwise
 - ESP32: Deep sleep between measurements (30-minute intervals)
 - **Active current**: ~300 mA for 8 seconds
 - **Sleep current**: ~26 mA (6 mA sensors OFF + 20 mA ESP32 deep sleep)
-- **Overall power savings: ~92% compared to always-on design** 🎉
+- **Overall power savings: ~92% compared to always-on design**
 
 ### Deep Sleep Mode
 
@@ -183,34 +183,34 @@ The firmware implements aggressive power saving:
 
 **Battery-only operation** (no solar):
 - Usable capacity: 8700 mAh × 80% = 6960 mAh (80% DoD recommended)
-- Runtime: 6960 mAh ÷ 653 mAh/day = **10.7 days** ≈ **11 days**
+- Runtime: 6960 mAh ÷ 653 mAh/day ≈ **5 days**
 
 **With 10W Solar Panel**:
 - Panel output: 10W @ 18V = ~0.56A peak
 - Realistic daily generation (5 hours sunlight): 0.56A × 5h = **2.8 Ah/day**
 - System consumption: 0.653 Ah/day
 - **Net gain: +2.15 Ah/day** (surplus charges battery)
-- **Runtime: Indefinite** ✅ (solar exceeds consumption by 4.3×)
+- **Runtime: Indefinite**  (solar exceeds consumption by 4.3×)
 
 **Cloudy day scenario** (1 hour effective sunlight):
 - Solar generation: 0.56 Ah/day
 - Net deficit: -0.653 + 0.56 = **-0.09 Ah/day** (slight deficit)
-- Battery can sustain system for **77 days** on cloudy weather before full discharge
+- Battery can sustain system for **30 days** on cloudy weather before full discharge
 
 **No sunlight for extended period**:
-- Battery lasts **~11 days** before requiring recharge
+- Battery lasts **~5 days** before requiring recharge
 
 ### Power Savings Summary
 
 | Configuration | Daily Consumption | Battery Life (8700 mAh) | Improvement |
 |---------------|-------------------|-------------------------|-------------|
 | **Always-ON** | ~8000 mAh | 1.1 days | Baseline |
-| **With optimizations** | ~653 mAh | 10.7 days | **12× longer** |
-| **With 10W solar** | Net positive | Indefinite | **♾️** |
+| **With optimizations** | ~653 mAh | 5 days | **5× longer** |
+| **With 10W solar** | Net positive | Indefinite | **Infinte** |
 
 *Actual battery life depends on WiFi signal strength, temperature, sensor warm-up time, and solar panel exposure.*
 
-## 🔄 Firmware Behavior
+##  Firmware Behavior
 
 ### Dual Measurement Cycle
 
@@ -257,7 +257,7 @@ Each wake-up performs **two complete cycles**:
 - OFF when sensors are unpowered (deep sleep)
 - Not software-controllable
 
-## 📡 Data Format
+##  Data Format
 
 ### JSON Payload Structure
 
@@ -319,7 +319,7 @@ Each wake-up performs **two complete cycles**:
 - `"offline"` – Failed to read or not responding
 - `"warming_up"` – Sensor still stabilizing
 
-## 🧰 Troubleshooting
+## Troubleshooting
 
 ### WiFi Connection Issues
 
@@ -358,7 +358,7 @@ Each wake-up performs **two complete cycles**:
 - Set baud rate to 115200
 - Check for brownout (power supply issue)
 
-## 📚 Additional Documentation
+##  Additional Documentation
 
 - **Main Documentation**: See `PROJECT_DELIVERY_DOCUMENTATION.md` in project root for complete system overview
 - **Sensor Details**: Visit [DFRobot](https://www.dfrobot.com/) for sensor datasheets and specifications
@@ -371,11 +371,8 @@ This firmware works with:
 
 See main project documentation for complete system setup.
 
-## 📝 License
 
-This project is proprietary and confidential. All rights reserved.
-
-## 🙏 Acknowledgments
+##  Acknowledgments
 
 Sensor hardware sourced from [DFRobot](https://www.dfrobot.com/).
 
