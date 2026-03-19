@@ -38,6 +38,15 @@ Filter sensors by category: Environment, Light, Gas, Soil. Showing 8 gas sensors
 ### Backend API -- FastAPI + Uvicorn Running
 ![Backend](Images/Backend%201.png)
 
+### Hardware Development -- Firmware & Sensor Testing
+![Firmware Development](Images/lab_1.jpeg)
+
+### Lab Setup -- Oscilloscope, Multimeter & Sensor Node Enclosures
+![Lab Setup](Images/lab_2.jpeg)
+
+### Hardware Debugging -- Probing Sensor Nodes
+![Hardware Testing](Images/lab_3.jpeg)
+
 ---
 
 ## :zap: Key Highlights
